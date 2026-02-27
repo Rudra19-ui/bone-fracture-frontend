@@ -215,179 +215,9 @@ function App() {
       addNotification('Please upload an image first', 'error');
       return;
     }
-    // Check if this image was already analyzed (by name) and load cached result
-    try {
-      if (uploadedFile && uploadedFile.name) {
-        const apiUrl = process.env.REACT_APP_API_URL || 'https://bone-fracture-backend-or69.onrender.com';
-        const res = await fetch(`${apiUrl}/api/analysis?image_name=${encodeURIComponent(uploadedFile.name)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && (data.bone_type || data.report_data)) {
-            const cached = data.report_data ? data.report_data : {
-              boneType: data.bone_type,
-              fractureDetected: !!data.fracture_detected,
-              confidence: data.confidence || 95,
-              severity: data.severity || 'Moderate',
-              location: data.location || 'Unknown',
-              recommendations: data.recommendations || [],
-              riskFactors: data.risk_factors || [],
-              treatmentPlan: data.treatment_plan || { phase1: '', phase2: '', phase3: '' },
-              timeline: data.timeline || { healing: '', fullRecovery: '' }
-            };
-            setAnalysisResult(cached);
-            const newAnalysis = {
-              id: Date.now(),
-              type: `${cached.boneType} ${cached.fractureDetected ? 'Fracture' : 'X-Ray'}`,
-              date: 'Loaded from database',
-              status: cached.fractureDetected ? 'severe' : 'normal',
-              confidence: cached.confidence
-            };
-            setRecentAnalyses(prev => [newAnalysis, ...prev.slice(0, 4)]);
-            addNotification('Loaded cached analysis from database', 'success');
-            return;
-          }
-        }
-      }
-    } catch (e) {
-      // Ignore cache errors and proceed to analysis
-    }
 
     setIsAnalyzing(true);
-    addNotification('Starting AI analysis...', 'info');
-
-    // Generate consistent results based on image name/size if API fails
-    const getDeterministicValue = (arr, seed) => {
-      let hash = 0;
-      for (let i = 0; i < seed.length; i++) {
-        hash = ((hash << 5) - hash) + seed.charCodeAt(i);
-        hash |= 0;
-      }
-      return arr[Math.abs(hash) % arr.length];
-    };
-
-    const seed = uploadedFile ? `${uploadedFile.name}-${uploadedFile.size}` : 'default-seed';
-    const lowerName = uploadedFile?.name?.toLowerCase() || '';
-    
-    // progress steps simulation
-    const progressSteps = [
-      { message: 'Preprocessing image...', delay: 500 },
-      { message: 'Running bone detection...', delay: 800 },
-      { message: 'Analyzing fracture patterns...', delay: 1000 },
-      { message: 'Generating recommendations...', delay: 700 }
-    ];
-
-    for (const step of progressSteps) {
-      await new Promise(resolve => setTimeout(resolve, step.delay));
-      addNotification(step.message, 'info');
-    }
-
-    // Improved Bone Type Detection based on filename
-    const boneTypes = ['Elbow', 'Hand', 'Shoulder', 'Wrist', 'Ankle'];
-    let detectedBoneType = getDeterministicValue(boneTypes, seed);
-    
-    if (lowerName.includes('wrist')) detectedBoneType = 'Wrist';
-    else if (lowerName.includes('elbow')) detectedBoneType = 'Elbow';
-    else if (lowerName.includes('hand')) detectedBoneType = 'Hand';
-    else if (lowerName.includes('shoulder')) detectedBoneType = 'Shoulder';
-    else if (lowerName.includes('ankle')) detectedBoneType = 'Ankle';
-
-    // Improved Fracture Detection based on filename
-    const locations = ['Proximal radius', 'Distal radius', 'Metacarpal', 'Humerus', 'Tibia'];
-
-    let confidence, resultTitle, safetyMessage, fractureDetected, predictionStr;
-    const hashVal = seed.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a }, 0);
-    const normalizedHash = Math.abs(hashVal % 100) / 100;
-
-    // If filename contains 'frac' or 'pos', force high confidence detection
-    const isLikelyFracture = lowerName.includes('frac') || lowerName.includes('pos');
-
-    if (isLikelyFracture || normalizedHash > 0.5) {
-      // High Confidence / Detected
-      confidence = isLikelyFracture ? (Math.random() * (0.99 - 0.90) + 0.90).toFixed(2) : (normalizedHash * (0.99 - 0.75) + 0.75).toFixed(2);
-      resultTitle = "DETECTED";
-      safetyMessage = "Model Detected Pattern Consistent With Fracture";
-      fractureDetected = true;
-      predictionStr = "Fracture Detected";
-    } else if (normalizedHash > 0.2) {
-      // Normal/Negative
-      confidence = (normalizedHash * (0.99 - 0.80) + 0.80).toFixed(2);
-      resultTitle = "NORMAL";
-      safetyMessage = "No Fracture Pattern Detected";
-      fractureDetected = false;
-      predictionStr = "No Fracture";
-    } else {
-      // Uncertain
-      confidence = (normalizedHash * (0.39 - 0.10) + 0.10).toFixed(2);
-      resultTitle = "UNCERTAIN";
-      safetyMessage = "Uncertain — Review Recommended";
-      fractureDetected = false;
-      predictionStr = "Uncertain";
-    }
-
-    const mockResult = {
-      boneType: detectedBoneType,
-      fractureDetected: fractureDetected,
-      resultTitle: resultTitle,
-      confidence: (confidence * 100).toFixed(1),
-      accuracy: 92.4, // Global model accuracy
-      confidenceCategory: resultTitle,
-      safetyMessage: safetyMessage,
-      predictionStr: predictionStr,
-      severity: fractureDetected ? "High Risk" : "Normal",
-      location: getDeterministicValue(locations, seed + 'loc'),
-      recommendations: fractureDetected ? [
-        'Immediate orthopedic consultation required',
-        'Immobilize the affected area',
-        'Clinical correlation required'
-      ] : [
-        'Clinical correlation required',
-        'Review by Radiologist recommended',
-        'This analysis is NOT a medical diagnosis'
-      ],
-      experimentalFeatures: {
-        vitCheck: (fractureDetected || normalizedHash > 0.5) ? "Consistent" : "Inconclusive",
-        patternSuggestion: fractureDetected ? "Possible fracture pattern observed" : "No distinct pattern",
-        attentionRegion: "Region of interest identified (Experimental)"
-      },
-      treatmentPlan: { phase1: '', phase2: '', phase3: '' },
-      timeline: { healing: '', fullRecovery: '' }
-    };
-
-    setAnalysisResult(mockResult);
-    setIsAnalyzing(false);
-
-    // Add to recent analyses
-    const newAnalysis = {
-      id: Date.now(),
-      type: `${mockResult.boneType} ${mockResult.fractureDetected ? 'Fracture' : 'X-Ray'}`,
-      date: 'Just now',
-      status: mockResult.fractureDetected ? 'severe' : 'normal',
-      confidence: mockResult.confidence
-    };
-    setRecentAnalyses(prev => [newAnalysis, ...prev.slice(0, 4)]);
-
-    // Add to history data (ensure it is saved and visible)
-    const newHistoryItem = {
-      id: Date.now(),
-      date: new Date().toISOString(),
-      region: mockResult.boneType,
-      status: mockResult.fractureDetected ? 'detected' : (mockResult.resultTitle === 'UNCERTAIN' ? 'uncertain' : 'normal'),
-      confidence: mockResult.confidence,
-      thumbnail: uploadedImage,
-      fullImage: uploadedImage,
-      resultTitle: mockResult.resultTitle,
-      safetyMessage: mockResult.safetyMessage,
-      summary: `Analysis of ${mockResult.boneType} region. ${mockResult.safetyMessage}.`,
-      visualAttention: true,
-      warnings: mockResult.resultTitle !== 'DETECTED' ? ['Review recommended'] : [],
-      details: {
-        location: mockResult.location,
-        boneType: mockResult.boneType
-      }
-    };
-    setHistoryData(prev => [newHistoryItem, ...prev]);
-
-    addNotification('Analysis complete & saved to history!', 'success');
+    addNotification('Starting REAL AI analysis...', 'info');
 
     try {
       const formData = new FormData();
@@ -397,27 +227,80 @@ function App() {
       }
       formData.append('user_name', user?.name || '');
       formData.append('user_type', user?.userType || '');
-      formData.append('bone_type', mockResult.boneType);
-      formData.append('fracture_detected', mockResult.fractureDetected ? 'true' : 'false');
-      formData.append('confidence', String(mockResult.confidence));
-      formData.append('severity', mockResult.severity);
-      formData.append('location', mockResult.location);
-      formData.append('recommendations', JSON.stringify(mockResult.recommendations));
-      formData.append('risk_factors', JSON.stringify(mockResult.riskFactors));
-      formData.append('treatment_plan', JSON.stringify(mockResult.treatmentPlan));
-      formData.append('timeline', JSON.stringify(mockResult.timeline));
-      formData.append('report_data', JSON.stringify(mockResult));
 
       const apiUrl = process.env.REACT_APP_API_URL || 'https://bone-fracture-backend-or69.onrender.com';
       const res = await fetch(`${apiUrl}/api/analysis`, { method: 'POST', body: formData });
+      
       if (res.ok) {
-        await res.json();
-        addNotification('Saved to database', 'success');
+        const data = await res.json();
+        
+        // Parse the REAL result from backend
+        const result = {
+          boneType: data.bone_type,
+          fractureDetected: data.fracture_detected,
+          resultTitle: data.fracture_detected ? "DETECTED" : "NORMAL",
+          confidence: data.confidence ? parseFloat(data.confidence).toFixed(1) : 0,
+          accuracy: data.accuracy || 92.4,
+          safetyMessage: data.fracture_detected ? "Model Detected Pattern Consistent With Fracture" : "No Fracture Pattern Detected",
+          location: data.location || "Unknown",
+          recommendations: data.fracture_detected ? [
+            'Immediate orthopedic consultation required',
+            'Immobilize the affected area',
+            'Clinical correlation required'
+          ] : [
+            'Clinical correlation required',
+            'Review by Radiologist recommended',
+            'This analysis is NOT a medical diagnosis'
+          ],
+          experimentalFeatures: data.report_data?.experimentalFeatures || {
+            vitCheck: data.confidence > 70 ? "Consistent" : "Inconclusive",
+            patternSuggestion: data.fracture_detected ? "Possible fracture pattern observed" : "No distinct pattern",
+            attentionRegion: "Region of interest identified"
+          }
+        };
+
+        setAnalysisResult(result);
+        
+        // Add to history and recent
+        const newAnalysis = {
+          id: Date.now(),
+          type: `${result.boneType} ${result.fractureDetected ? 'Fracture' : 'X-Ray'}`,
+          date: 'Just now',
+          status: result.fractureDetected ? 'severe' : 'normal',
+          confidence: result.confidence
+        };
+        setRecentAnalyses(prev => [newAnalysis, ...prev.slice(0, 4)]);
+        
+        const newHistoryItem = {
+          id: Date.now(),
+          date: new Date().toISOString(),
+          region: result.boneType,
+          status: result.fractureDetected ? 'detected' : 'normal',
+          confidence: result.confidence,
+          thumbnail: uploadedImage,
+          fullImage: uploadedImage,
+          resultTitle: result.resultTitle,
+          safetyMessage: result.safetyMessage,
+          summary: `Analysis of ${result.boneType} region. ${result.safetyMessage}.`,
+          visualAttention: true,
+          warnings: !result.fractureDetected ? ['Review recommended'] : [],
+          details: {
+            location: result.location,
+            boneType: result.boneType
+          }
+        };
+        setHistoryData(prev => [newHistoryItem, ...prev]);
+
+        addNotification('Analysis complete!', 'success');
       } else {
-        addNotification('Failed to save to database', 'error');
+        const errData = await res.json();
+        addNotification(`Analysis failed: ${errData.error || 'Server error'}`, 'error');
       }
     } catch (err) {
-      addNotification('Error connecting to database', 'error');
+      console.error(err);
+      addNotification('Error connecting to AI backend', 'error');
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
